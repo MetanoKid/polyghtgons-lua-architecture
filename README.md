@@ -313,3 +313,11 @@ Just to give an insight of how the game logic was added using Lua, some modules 
   - `PuzzleElement`: some of the Lua modules are related to puzzles, and they are an important part of the game. They have to react to Polyghtgons' light and modify their status based on whether the right or wrong color was used. Take a look by [checking here](Lua/Architecture/Classes/PuzzleElement.lua).
   - `Lever`: an example of `PuzzleElement`. This class models a lever that can be activated by lighting it up with the correct color. When activated, it will chain this activation to another element. By checking [Lever.lua](Lua/Architecture/Classes/Lever.lua) you can also check how Lua instances communicate with C++ entities via messages or Lua instances by checking the `Polyghtgons.Instances` namespace.
   - `HeadExchanger`: this last *so-called* complex element is included so you can check it and try to guess what it does :) It's worth the try!
+
+## Conclusion
+
+C++ is an awesome and pretty powerful language. Lua is a pretty nice scripting language but with great power comes great responsibility: scripting languages need to be based on a structured architecture. If that's not the case, it becomes a mess pretty quick.
+
+By keeping all of the performance-critical code in C++ and leveraging it with Lua using a flexible architecture, development can be made easier.
+
+Explore the repository at will and thanks a lot for taking the time to read all this!
