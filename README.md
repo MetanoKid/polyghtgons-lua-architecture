@@ -16,7 +16,7 @@ So, let's get started!
 
 ## The general picture
 
-Polyghtgons was developed in C++ for Windows systems. It started from a base project that was provided by the tutors, which contained the basic code to create a window, load some assets and get them on screen. It used a component-based game architecture, and we extended and modified this base project until the final result.
+Polyghtgons was developed in C++ for Windows systems. It started from a base project that was provided by the tutors, which contained the basic code to create a window, load some assets and get them on screen. It used a component-based game architecture, and we extended and modified this base project until the final result. After the Master's Degree ended I spent some time exploring this kind of game architectures; you can [check it in this repository!](https://github.com/MetanoKid/toy-game-architecture "Toy Game Architecture on GitHub").
 
 The C++ solution consisted of multiple projects: one for each area of the game. The solution tree was (omitting some not relevant projects):
 
@@ -129,3 +129,50 @@ void CPublisher::registerData(lua_State *lua) {
 ```
 
 You can check them by navigating to their respective directories: [AI publisher](C++/DataBindingExamples/AI/ScriptDataPublisher) and [Graphics publisher](C++/DataBindingExamples/Graphics/ScriptDataPublisher).
+
+### C++ component to communicate with Lua
+
+Because our logic architecture was a component-based one (remember to [check this other repository for more info!](https://github.com/MetanoKid/toy-game-architecture "Toy Game Architecture on GitHub")), I was set to create a component we could add to our entities to manage the creation of the linked Lua object and its life cycle. I called it `ScriptExecutor`.
+
+A quick look at the [ScriptExecutor.h](C++/Component/ScriptExecutor.h) file shows some methods that manage the life cycle of the component:
+
+  - `spawn`: called when the component is being built during the level loading phase.
+  - `activate`/`deactivate`: called when the entity is *activated* when a level *starts* and when an entity is *deactivated* when the level is destroyed. Entities could also be *activated*/*deactivated* during the course of a level.
+  - `accept`: when a message was sent to the entity, it asks its component whether or not they accept it.
+  - `process`: components that accept a message must process it.
+  - `tick`: called once per frame.
+
+This component is the main responsible of dealing with C++ <=> Lua, so let's explain it step by step.
+
+#### Instantiation
+
+One of the parameters present in entities defined in the level files was the `lua_constructor`. This was a string that represented the name of the Lua class to instantiate when creating the Lua-side instance for the component (i.e. `Sprout`, `Enemy`, `LightPuzzle` or `TutorialManager`).
+
+If the Lua-side constructor was found, the pointer to the constructor was retrieved and it was called on a *protected sandbox* like so:
+
+```C++
+EXEC_PROTECTED_REACT_ON_EXCEPTION(
+    _instance = constructor(infoAsLuaObject, this),
+    return false
+);
+```
+
+Now, two important steps were performed:
+
+##### Method caching
+
+We wanted to be as flexible as possible with Lua so the programmer had as less restrictions as possible when it came to add logic in Lua. Because of this, the component inspects the newly created Lua instance and caches a pointer to each important function it may call during the life cycle. These functions included `activate`, `deactivate`, `tick` and `snapshot`.
+
+But, how to provide flexibility to answer `accept` calls by the entity when a message arrived? We decided to have functions that processed messages with the following name structure: `onMessageName`. This way, if our Lua instance was interested on knowing when a sensor perceived a signal, we would declare `onPerceived`. If we wanted to react to a Polyghtgon lighting up/turning off an entity, we would declare `onLightUp`/`onTurnOff`.
+
+##### Instance publishing
+
+One of the interesting functions in the Lua-side architecture is `publishInstance`. We'll get to it soon but, in a nutshell, it checks if another instance of the same name was already published in the level (it allows for duplicate checks).
+
+#### Life cycle
+
+After all methods were cached, the Lua-side instance was ready to live. Whenever a life cycle method was invoked on the component, it checked whether or not the Lua-side instance had a relevant method for it, and invoked it as well as a cascade.
+
+Messaging method `accept` checked if the Lua-side instance was interested in the message (whether or not it defined an `onMessageName` function). On the other hand, `process` would create a Lua-side instance of the C++ message it received (they were published to Lua as mentioned in a previous section) and invoke the corresponding `onMessageName(message)` function.
+
+Examples of all this section will be shown after the Lua-side architecture is explained.
