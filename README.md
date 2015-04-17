@@ -70,15 +70,62 @@ You can check the `CScriptManager` class navigating to [ScriptManager.h](C++/Scr
 
 One interesting thing about the class is the method `CScriptManager::open`:
 
-    bool CScriptManager::open() {
-        _lua = lua_open();
+```C++
+bool CScriptManager::open() {
+    _lua = lua_open();
 
-        [...]
+    [...]
 
-        // load base script
-        loadScript("Polyghtgons.lua");
+    // load base script
+    loadScript("Polyghtgons.lua");
 
-        return true;
-    }
+    return true;
+}
+```
 
 The entry point of the Lua-side architecture is that `Polyghtgons.lua` file. By calling that, all the necessary Lua code is called and the system is correctly initialized. We'll get on that later.
+
+### Class and method binding
+
+Not all projects in the solution were required from Lua, so only some of them published their data to Lua using Luabind. This is one of the most powerful features of Luabind (like most of them!).
+
+We decided we wanted to have each project to publish their data, so no external project knew anything about their internal classes or methods.
+
+Two examples are included in this repository: `AI` and `Graphics`. They follow the same structure:
+
+```C++
+namespace ScriptDataPublisher {
+
+    class CPublisher {
+    public:
+        static void registerData(lua_State *lua);
+    };
+
+}
+```
+
+Each one of them then publishes whatever value or method they are required to, depending on the necessities found while developing. To show an example, the infamous `Vector3` construct was published this way:
+
+```C++
+void CPublisher::registerData(lua_State *lua) {
+    luabind::module(lua, "Polyghtgons")
+    [
+        luabind::namespace_("Classes") [
+            luabind::namespace_("Graphics") [
+                // Vector3 definition
+                luabind::class_<Vector3>("Vector3")
+                .def(luabind::constructor<float, float, float>())
+                .def_readonly("x", &Vector3::x)
+                .def_readonly("y", &Vector3::y)
+                .def_readonly("z", &Vector3::z)
+                .def("angleBetween", &Vector3::angleBetween)
+                .def("cross", &Vector3::crossProduct)
+                .def("dot", &Vector3::dotProduct)
+                .property("normalized", &Vector3::normalisedCopy)
+            ]
+        ]
+    ];
+}
+```
+
+You can check them by navigating to their respective directories: [AI publisher](C++/DataBindingExamples/AI/ScriptDataPublisher) and [Graphics publisher](C++/DataBindingExamples/Graphics/ScriptDataPublisher).
