@@ -55,3 +55,30 @@ The general idea was:
   - Create a component for the component-based architecture that communicated to Lua.
   - Create a little architecture in Lua that supported all this system and made communication as transparent as possible.
 
+## Lua architecture
+
+Let's explore every part of the architecture more closely.
+
+### ScriptManager
+
+This project's main goal was the initialization of Lua and the load of the Lua architecture. It consisted of two different classes:
+
+  - `CScriptManager`: the entry point of this project. It managed Lua's life cycle and included some methods to load scripts and get data from Lua to C++. It also declared some macros that helped prevent crashes because of Lua exceptions and provided ways to react against said exceptions (show logs or provide default values, for example).
+  - `CTranslator`: levels in Polyghtgons were defined in a JSON file which was processed using (rapidjson)[https://github.com/miloyip/rapidjson "rapidjson on GitHub"]. Because we wanted Lua instances to have all the data defined for an entity in a level, we had to translate JSON data into Lua objects and values.
+
+You can check the `CScriptManager` class navigating to [ScriptManager.h](C++/ScriptManager/ScriptManager.h) and [ScriptManager.cpp](C++/ScriptManager/ScriptManager.cpp).
+
+One interesting thing about the class is the method `CScriptManager::open`:
+
+    bool CScriptManager::open() {
+        _lua = lua_open();
+
+        [...]
+
+        // load base script
+        loadScript("Polyghtgons.lua");
+
+        return true;
+    }
+
+The entry point of the Lua-side architecture is that `Polyghtgons.lua` file. By calling that, all the necessary Lua code is called and the system is correctly initialized. We'll get on that later.
