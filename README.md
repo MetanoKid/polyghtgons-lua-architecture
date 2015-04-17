@@ -68,7 +68,7 @@ This project's main goal was the initialization of Lua and the load of the Lua-s
   - `CScriptManager`: the entry point of this project. It managed Lua's life cycle and included some methods to load scripts and get data from Lua to C++ (via Luabind). It also declared some macros that helped prevent crashes because of Lua exceptions and provided ways to react against said exceptions (show logs or provide default values, for example).
   - `CTranslator`: levels in Polyghtgons were defined in a JSON file which was processed using [rapidjson](https://github.com/miloyip/rapidjson "rapidjson on GitHub"). Because we wanted Lua instances to have all the data defined for an entity in a level, we had to translate JSON data into Lua objects and values.
 
-You can check the `CScriptManager` class navigating to [ScriptManager.h](C++/ScriptManager/ScriptManager.h) and [ScriptManager.cpp](C++/ScriptManager/ScriptManager.cpp).
+You can check the `CScriptManager` class navigating to [ScriptManager.h](C++/ScriptManager/ScriptManager.h) and [ScriptManager.cpp](C++/ScriptManager/ScriptManager.pcp).
 
 One interesting thing about the class is the method `CScriptManager::open`:
 
@@ -85,7 +85,7 @@ bool CScriptManager::open() {
 }
 ```
 
-The entry point of the Lua-side architecture is that `Polyghtgons.lua` file. By calling that, all the necessary Lua code is called and the system is correctly initialized. We'll get on that later.
+The entry point of the Lua-side architecture is that `Polyghtgons.lua` file. By calling that, all the necessary Lua-side initialization is called and the system is ready. Because the game had a two-step initialization philosophy (first create systems, then initialize them), the `loadScripts` method would load all Lua-side classes and functions. We'll get on all that later.
 
 ### Class and method binding
 
@@ -178,3 +178,138 @@ After all methods were cached, the Lua-side instance was ready to live. Whenever
 Messaging method `accept` checked if the Lua-side instance was interested in the message (whether or not it defined an `onMessageName` function). On the other hand, `process` would create a Lua-side instance of the C++ message it received (they were published to Lua as mentioned in a previous section) and invoke the corresponding `onMessageName(message)` function.
 
 This section was a bit complex, but *just show me the code!*. You can find it navigating to [ScriptExecutor.h](C++/Component/ScriptExecutor.h) and [ScriptExecutor.cpp](C++/Component/ScriptExecutor.cpp)
+
+### Lua-side architecture
+
+The final part of the *Lua architecture* is the Lua-side part. All previously mentioned systems were created to support this one. So, let's get started!
+
+#### Namespaces
+
+Before I worked as a professional game programmer I spent a couple of years a Front-end Developer. I worked with JavaScript, and I built some APIs and applications from scratch while the company worked on a new programming language: [Speech](http://speechlang.org/ "Speech website").
+
+One of the main concerns I had when building the Lua-side architecture was not having messy and spaghetti code. Because of that, everything was part of a namespace. The namespace tree was (as defined in [Polyghtgons.lua](Lua/Architecture/Polyghtgons.lua)):
+
+```Lua
+Polyghtgons = {                 -- global namespace
+    Classes = {                 -- C++ and Lua classes
+        Logic = {               -- C++ Logic project classes
+            Components = {},    -- C++ components
+            Messages = {}       -- C++ messages
+        },
+        Graphics = {},          -- C++ Graphics classes
+        Scripting = {},         -- Lua classes
+        Utils = {}              -- C++ util functions 
+    },
+    Functions = {},             -- Lua functions
+    Config = {},                -- Lua configuration data
+    Instances = {},             -- Lua instances
+    L10N = {}                   -- Localization data
+};
+```
+
+#### Modules (classes, functions and data)
+
+One of my goals was to be able to add classes, functions and configuration data transparently for the programmer. Just create a new file, drop it in the correct directory, and it is *magically* loaded into place without having to compile the project! And it can be referenced from an entity in a level right away!
+
+To be able to support this feature, I based the development on [JavaScript's Module Pattern](http://addyosmani.com/resources/essentialjsdesignpatterns/book/#modulepatternjavascript "Addy Osmani FTW!"). Much like [Node.js' modules](https://nodejs.org/api/modules.html), Lua's `loadfile` reads a file and doesn't run it, but compiles it as a function. So, I was set for the target format!
+
+Because we wanted to have all data into namespaces, we preferred to have each function or object mapped with a name. This way, `Hello, world!` module would be:
+
+```Lua
+return {
+    name = "functionName",
+    value = function ()
+        print("Hello, world!")
+    end
+}
+```
+
+#### Module loading
+
+As the second part of the two-step initialization process, the `MainLoader.lua` file is executed. The goal of this script is to load every Lua function and constructor using the `FileLoader.lua` function.
+
+This loader function takes a path and loads every file it finds into a Lua object as a map of `string => function`. There's a special feature that I haven't mentioned yet, and is dependencies between modules. If a module doesn't return the expected pair (it returns `nil`), that module is then inserted into a list of modules that couldn't be loaded because of dependencies. When the *first loading pass* is completed, dependent modules are checked again. This process is repeated for a custom number of times via `Configuration.lua`.
+
+If you wish to check how they work, navigate to [MainLoader.lua](Lua/Architecture/MainLoader.lua) and [FileLoader.lua](Lua/Architecture/FileLoader.lua).
+
+#### Configuration file
+
+`Configuration.lua` contains all the static configuration data that allows the game to be executed using different options without having to recompile the project each time. These options include sound enabling/disabling, default language, paths to in-game levels or the frequency to execute certain systems (like perception).
+
+It might be interesting for you to check it out, so navigate to [Configuration.lua](Lua/Architecture/Configuration.lua).
+
+#### Localization
+
+Much like the configuration file, localization files are also Lua modules that define a map of `localization key => localized text`.
+
+You can check an example navigating to [this folder](Lua/Architecture/Localization).
+
+#### Lua functions
+
+Taking previous explanations into account, all modules included in the `Functions` folder will be loaded into the `Polyghtgons.Functions` namespace. As an example, this is the `GetLocalizedText.lua` module. It obtains the localized string for a given key:
+
+```Lua
+return {
+    name = "localize",
+    value = function (key)
+        local L10N = Polyghtgons.L10N;
+        local lang = Polyghtgons.Config.language or Polyghtgons.Config.cacheOnStart.language;
+
+        if L10N and lang and L10N[lang] then
+            return L10N[lang][key];
+        end
+
+        return "Key '" .. key .. "' not found for current locale '" .. lang .. "'";
+    end
+};
+```
+
+I've included all function modules that existed in the game as a reference, and you can find them navigating to the [functions directory](Lua/Architecture/Functions).
+
+#### Lua classes
+
+We used Luabind's inheritance feature to build our architecture. Every class we define inherits from `BaseEntity`:
+
+```Lua
+class 'BaseEntity'
+
+function BaseEntity:__init(attributes, component)
+    self.component = component;
+    self.entity = component.entity;
+    self.level = component.entity.level;
+end
+
+return {
+    name = "BaseEntity",
+    value = BaseEntity
+};
+```
+
+And every class we define is required to have this basic structure:
+
+```Lua
+if not BaseEntity then return end
+class 'ChildClass' (BaseEntity)
+
+function ChildClass:__init(attributes, component)
+    Polyghtgons.Classes.Scripting.BaseEntity.__init(self, attributes, component);
+
+    -- extra initialization for this class
+end
+
+-- extra functions for this class
+
+return {
+    name = "ChildClass",
+    value = ChildClass
+};
+```
+
+##### Examples
+
+Just to give an insight of how the game logic was added using Lua, some modules are included in the repository.
+
+  - `Obstacle`: every entity that has an instance of this class will remove itself from the pathfinding graph. Check it by [navigating here](Lua/Architecture/Classes/Obstacle.lua)
+  - `PuzzleElement`: some of the Lua modules are related to puzzles, and they are an important part of the game. They have to react to Polyghtgons' light and modify their status based on whether the right or wrong color was used. Take a look by [checking here](Lua/Architecture/Classes/PuzzleElement.lua).
+  - `Lever`: an example of `PuzzleElement`. This class models a lever that can be activated by lighting it up with the correct color. When activated, it will chain this activation to another element. By checking [Lever.lua](Lua/Architecture/Classes/Lever.lua) you can also check how Lua instances communicate with C++ entities via messages or Lua instances by checking the `Polyghtgons.Instances` namespace.
+  - `HeadExchanger`: this last *so-called* complex element is included so you can check it and try to guess what it does :) It's worth the try!
